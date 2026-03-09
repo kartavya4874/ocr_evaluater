@@ -157,15 +157,14 @@ Return ONLY valid JSON. No markdown, no backticks, no explanation.
 
 Return this exact structure:
 {
-  "total_marks": <number — the actual total marks a student can score, NOT the sum of all OR alternatives>,
+  "total_marks": <number>,
   "questions": [
     {
-      "question_number": "<string like 1, 1a, 2b, 11.1, 11.2 etc>",
+      "question_number": "<string like 1, 1a, 2b etc>",
       "question_text": "<full question text>",
       "question_type": "<one of: MCQ, FIB, SHORT, LONG, DIAGRAM, CODE, MATH, CHEMISTRY, NUMERICAL>",
       "marks_allocated": <number>,
       "options": ["A. ...", "B. ..."],
-      "or_group": "<group ID if this is an OR/alternative question, e.g. '11' for 11.1 OR 11.2; null if not an OR question>",
       "sub_questions": [
         {
           "question_number": "<e.g. 1a>",
@@ -173,7 +172,6 @@ Return this exact structure:
           "question_type": "...",
           "marks_allocated": <number>,
           "options": [],
-          "or_group": "<group ID or null>",
           "special_instruction": null
         }
       ],
@@ -189,12 +187,7 @@ Rules:
 - If marks are not specified for a question, estimate from total marks
 - Preserve mathematical notation as LaTeX where possible
 - For MCQs, include all options
-- Note any special instructions (attempt any N, compulsory, etc.)
-- CRITICAL: Detect OR/alternative questions (e.g. "11.1 OR 11.2", "Q5a OR Q5b", "Answer either A or B")
-  - When two questions are OR alternatives, give them the SAME or_group value (e.g. "11" for 11.1/11.2)
-  - Both alternatives should have the same marks_allocated (since only one is attempted)
-  - The total_marks should count OR groups only ONCE (not both alternatives)
-- Set or_group to null for questions that are NOT OR/alternatives"""
+- Note any special instructions (attempt any N, compulsory, etc.)"""
 
     client = OpenAI(api_key=api_key)
     content = _build_vision_content(images, prompt)
