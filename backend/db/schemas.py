@@ -138,7 +138,7 @@ class EvaluationResult(BaseModel):
     flagged_questions: List[Dict[str, Any]] = []
     overall_feedback: str = ""
     evaluated_at: str = ""
-    model_used: str = "claude-opus-4-6"
+    model_used: str = "gpt-4o"
 
 
 # --- Course Data ---
@@ -180,7 +180,7 @@ class WorkerInfo(BaseModel):
 class ConfigModel(BaseModel):
     root_exam_folder: str = ""
     export_output_folder: str = ""
-    anthropic_api_key: str = ""
+    openai_api_key: str = ""
     mongodb_uri: str = "mongodb://localhost:27017"
     redis_url: str = "redis://localhost:6379"
     distributed_mode: bool = False

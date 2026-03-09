@@ -7,7 +7,7 @@ import json
 import logging
 from typing import List, Dict, Optional, Any
 
-import anthropic
+from openai import OpenAI
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +42,7 @@ async def build_calibration_profile(
     api_key: str,
 ) -> dict:
     """
-    Build a calibration profile by having Claude infer marking criteria from
+    Build a calibration profile by having GPT-4o infer marking criteria from
     pre-graded answers.
     """
     if not pregraded_answers:
@@ -59,7 +59,7 @@ async def build_calibration_profile(
     calibration_examples = []
     criteria_parts = []
 
-    client = anthropic.Anthropic(api_key=api_key)
+    client = OpenAI(api_key=api_key)
 
     for qnum, answers in by_question.items():
         qinfo = question_map.get(qnum, {})
@@ -110,12 +110,12 @@ Return ONLY valid JSON:
 }}"""
 
         try:
-            response = client.messages.create(
-                model="claude-opus-4-20250514",
+            response = client.chat.completions.create(
+                model="gpt-4o",
                 max_tokens=2048,
                 messages=[{"role": "user", "content": prompt}],
             )
-            text = response.content[0].text.strip()
+            text = response.choices[0].message.content.strip()
             if text.startswith("```"):
                 lines = text.split("\n")[1:]
                 if lines and lines[-1].strip() == "```":

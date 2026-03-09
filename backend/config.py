@@ -12,7 +12,7 @@ from typing import Optional
 DEFAULT_CONFIG = {
     "root_exam_folder": "",
     "export_output_folder": "",
-    "anthropic_api_key": "",
+    "openai_api_key": "",
     "mongodb_uri": "mongodb://localhost:27017",
     "redis_url": "redis://localhost:6379",
     "distributed_mode": False,
@@ -76,6 +76,6 @@ def validate_config(config: dict) -> dict:
     Returns a dict of {field: bool} indicating validity."""
     results = {}
     results["root_exam_folder"] = bool(config.get("root_exam_folder")) and os.path.isdir(config.get("root_exam_folder", ""))
-    results["anthropic_api_key"] = bool(config.get("anthropic_api_key"))
+    results["openai_api_key"] = bool(config.get("openai_api_key"))
     results["mongodb_uri"] = bool(config.get("mongodb_uri"))
     return results

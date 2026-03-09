@@ -16,7 +16,7 @@ from fastapi import FastAPI, HTTPException, BackgroundTasks, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
-import anthropic
+from openai import OpenAI
 
 from backend.config import load_config, save_config, validate_config
 from backend.db.mongo import mongo_manager
@@ -90,7 +90,7 @@ async def config_load():
 
 @app.post("/config/validate")
 async def config_validate():
-    """Test MongoDB, Redis, and Anthropic API connections."""
+    """Test MongoDB, Redis, and OpenAI API connections."""
     cfg = load_config()
     results = {}
 
@@ -104,23 +104,23 @@ async def config_validate():
         results["mongodb"] = False
         results["mongodb_error"] = str(e)
 
-    # Test Anthropic API
+    # Test OpenAI API
     try:
-        api_key = cfg.get("anthropic_api_key", "")
+        api_key = cfg.get("openai_api_key", "")
         if api_key:
-            client = anthropic.Anthropic(api_key=api_key)
-            response = client.messages.create(
-                model="claude-opus-4-20250514",
+            client = OpenAI(api_key=api_key)
+            response = client.chat.completions.create(
+                model="gpt-4o",
                 max_tokens=10,
                 messages=[{"role": "user", "content": "Say OK"}],
             )
-            results["anthropic"] = True
+            results["openai"] = True
         else:
-            results["anthropic"] = False
-            results["anthropic_error"] = "API key not configured"
+            results["openai"] = False
+            results["openai_error"] = "API key not configured"
     except Exception as e:
-        results["anthropic"] = False
-        results["anthropic_error"] = str(e)
+        results["openai"] = False
+        results["openai_error"] = str(e)
 
     # Test Redis (only if distributed mode enabled)
     if cfg.get("distributed_mode"):
@@ -213,7 +213,7 @@ async def _run_pipeline():
 
     try:
         cfg = load_config()
-        api_key = cfg.get("anthropic_api_key", "")
+        api_key = cfg.get("openai_api_key", "")
         grading_scale = cfg.get("grading_scale", {})
         re_evaluate = cfg.get("re_evaluate", False)
         max_concurrent = cfg.get("max_concurrent_api_calls", 5)
@@ -221,7 +221,10 @@ async def _run_pipeline():
 
         # Ensure MongoDB is connected
         if not mongo_manager.is_connected():
-            mongo_manager.connect(cfg.get("mongodb_uri", ""))
+            connected = mongo_manager.connect(cfg.get("mongodb_uri", ""))
+            if not connected:
+                await _emit_progress({"stage": "FAILED", "message": "MongoDB connection failed. Check your connection string and network."})
+                return
 
         # Step 1: Scan
         await _emit_progress({"stage": "SCANNING", "message": "Scanning exam folder..."})

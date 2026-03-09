@@ -1,6 +1,6 @@
 # Exam Evaluator
 
-Automated exam evaluation desktop application powered by Claude AI. Faculty double-clicks it and it works.
+Automated exam evaluation desktop application powered by OpenAI GPT-4o. Faculty double-clicks it and it works.
 
 ## Architecture
 
@@ -12,7 +12,7 @@ Electron Shell (Desktop Window)
             ↕
     MongoDB (local or remote)
     Redis (optional, distributed mode)
-    Anthropic Claude API (claude-opus-4-6)
+    OpenAI GPT-4o API
 ```
 
 ## Prerequisites
@@ -83,7 +83,7 @@ python -m uvicorn backend.main:app --port 8765 --host 127.0.0.1 --reload
 1. Launch the app
 2. Go to **Setup**
 3. Set your **Root Exam Folder** path
-4. Enter your **Anthropic API Key**
+4. Enter your **OpenAI API Key**
 5. Set your **MongoDB URI** (default: `mongodb://localhost:27017`)
 6. Click **Test Connections** to verify
 7. Click **Save Configuration**
@@ -135,7 +135,7 @@ python worker.py --head http://<HEAD_IP>:<PORT> --id worker_2 --threads 4
 | Desktop shell | Electron |
 | Frontend | React (Vite) |
 | Backend | Python 3.11+ — FastAPI + Uvicorn |
-| AI | Anthropic Claude claude-opus-4-6 |
+| AI | OpenAI GPT-4o |
 | Database | MongoDB (pymongo) |
 | Job queue | Redis (optional) |
 | Excel export | openpyxl |

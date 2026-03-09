@@ -7,7 +7,7 @@ import logging
 from datetime import datetime, timezone
 from typing import List, Dict, Any
 
-import anthropic
+from openai import OpenAI
 
 logger = logging.getLogger(__name__)
 
@@ -87,8 +87,8 @@ async def generate_overall_feedback(
     grade: str,
     api_key: str,
 ) -> str:
-    """Generate an overall feedback paragraph using Claude."""
-    # Build summary for Claude
+    """Generate an overall feedback paragraph using GPT-4o."""
+    # Build summary for the model
     question_summaries = []
     for eq in evaluated_questions:
         q_summary = f"Q{eq['question_number']}: {eq.get('marks_awarded', 0)}/{eq.get('marks_total', 0)}"
@@ -117,13 +117,13 @@ Write 3-5 sentences covering:
 Return ONLY the feedback paragraph text. No JSON, no formatting, just the text."""
 
     try:
-        client = anthropic.Anthropic(api_key=api_key)
-        response = client.messages.create(
-            model="claude-opus-4-20250514",
+        client = OpenAI(api_key=api_key)
+        response = client.chat.completions.create(
+            model="gpt-4o",
             max_tokens=512,
             messages=[{"role": "user", "content": prompt}],
         )
-        return response.content[0].text.strip()
+        return response.choices[0].message.content.strip()
     except Exception as e:
         logger.error(f"Failed to generate feedback for {roll_number}: {e}")
         return f"Overall score: {total_awarded}/{total_possible} ({percentage}%), Grade: {grade}."
@@ -163,5 +163,5 @@ async def aggregate_student_result(
         "flagged_questions": flagged,
         "overall_feedback": feedback,
         "evaluated_at": datetime.now(timezone.utc).isoformat(),
-        "model_used": "claude-opus-4-6",
+        "model_used": "gpt-4o",
     }

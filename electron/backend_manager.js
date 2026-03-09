@@ -36,9 +36,13 @@ function getBackendPaths() {
     if (isDev) {
         // Development mode — backend is in project root
         const projectRoot = path.join(__dirname, '..');
+        // Use venv Python if available (Windows)
+        const venvPython = path.join(projectRoot, 'venv', 'Scripts', 'python.exe');
+        const fs = require('fs');
+        const pythonExe = fs.existsSync(venvPython) ? venvPython : 'python';
         return {
             cwd: projectRoot,
-            pythonCmd: 'python',
+            pythonCmd: pythonExe,
             args: ['-m', 'uvicorn', 'backend.main:app', '--port', String(backendPort), '--host', '127.0.0.1'],
         };
     } else {

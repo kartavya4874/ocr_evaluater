@@ -7,7 +7,7 @@ export default function Setup() {
     const [config, setConfig] = useState({
         root_exam_folder: '',
         export_output_folder: '',
-        anthropic_api_key: '',
+        openai_api_key: '',
         mongodb_uri: 'mongodb://localhost:27017',
         redis_url: 'redis://localhost:6379',
         distributed_mode: false,
@@ -110,7 +110,7 @@ export default function Setup() {
             <div className="grid grid-2" style={{ marginBottom: 20 }}>
                 <div className="card">
                     <div className="card-header">
-                        <h3 className="card-title">🔑 Anthropic API</h3>
+                        <h3 className="card-title">🔑 OpenAI API</h3>
                     </div>
                     <div className="input-group">
                         <label>API Key</label>
@@ -118,9 +118,9 @@ export default function Setup() {
                             id="input-api-key"
                             className="input"
                             type="password"
-                            placeholder="sk-ant-..."
-                            value={config.anthropic_api_key}
-                            onChange={(e) => updateConfig('anthropic_api_key', e.target.value)}
+                            placeholder="sk-..."
+                            value={config.openai_api_key}
+                            onChange={(e) => updateConfig('openai_api_key', e.target.value)}
                         />
                     </div>
                 </div>
@@ -254,10 +254,10 @@ export default function Setup() {
                                 </span>
                             </div>
                             <div className="connection-test">
-                                <span className="service-name">Anthropic</span>
+                                <span className="service-name">OpenAI</span>
                                 <span className="status-badge">
-                                    <span className={`status-dot ${testResults.anthropic ? 'online' : 'offline'}`} />
-                                    {testResults.anthropic ? 'Connected' : testResults.anthropic_error || 'Failed'}
+                                    <span className={`status-dot ${testResults.openai ? 'online' : 'offline'}`} />
+                                    {testResults.openai ? 'Connected' : testResults.openai_error || 'Failed'}
                                 </span>
                             </div>
                             {testResults.redis !== null && (

@@ -155,7 +155,7 @@ class Worker:
         # Get config and course data from head
         resp = requests.get(f"{self.head_url}/config/load", timeout=10)
         config = resp.json().get("config", {})
-        api_key = config.get("anthropic_api_key", "")
+        api_key = config.get("openai_api_key", "")
 
         course_code = job["course_code"]
         roll_number = job["roll_number"]

@@ -1,5 +1,5 @@
 """
-Evaluator module — per-question evaluation using Claude claude-opus-4-6.
+Evaluator module — per-question evaluation using GPT-4o.
 Includes post-processing for MCQ/FIB force full-or-zero logic.
 """
 
@@ -8,7 +8,8 @@ import logging
 import asyncio
 from typing import List, Dict, Optional, Any
 
-import anthropic
+import openai
+from openai import OpenAI
 
 from backend.pipeline.calibration import format_calibration_for_prompt
 
@@ -22,7 +23,7 @@ async def evaluate_question(
     semaphore: Optional[asyncio.Semaphore] = None,
 ) -> dict:
     """
-    Evaluate a single question using Claude claude-opus-4-6.
+    Evaluate a single question using GPT-4o.
     Returns the evaluation result dict.
     """
     if not mapped_question.get("attempted", True):
@@ -97,13 +98,13 @@ Possible flags (use only when applicable):
 - "BOUNDARY_CASE" — student is very close to gaining/losing marks"""
 
     async def _call_api():
-        client = anthropic.Anthropic(api_key=api_key)
-        response = client.messages.create(
-            model="claude-opus-4-20250514",
+        client = OpenAI(api_key=api_key)
+        response = client.chat.completions.create(
+            model="gpt-4o",
             max_tokens=2048,
             messages=[{"role": "user", "content": prompt}],
         )
-        return response.content[0].text
+        return response.choices[0].message.content
 
     try:
         if semaphore:
@@ -139,7 +140,7 @@ Possible flags (use only when applicable):
     except json.JSONDecodeError as e:
         logger.error(f"Failed to parse evaluation for Q{qnum}: {e}")
         return _error_result(qnum, marks, f"JSON parse error: {e}")
-    except anthropic.RateLimitError:
+    except openai.RateLimitError:
         raise  # Let the caller handle retry
     except Exception as e:
         logger.error(f"Evaluation failed for Q{qnum}: {e}")
@@ -195,7 +196,7 @@ async def evaluate_all_questions(
         for attempt in range(max_retries):
             try:
                 return await evaluate_question(mq, calibration_profile, api_key, semaphore)
-            except anthropic.RateLimitError:
+            except openai.RateLimitError:
                 if attempt < max_retries - 1:
                     delay = base_delay * (2 ** attempt)
                     logger.warning(f"Rate limited on Q{mq['question_number']}, retrying in {delay}s...")

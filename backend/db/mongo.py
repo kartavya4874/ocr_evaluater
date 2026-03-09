@@ -4,9 +4,11 @@ Handles all database operations: connect, upsert, query.
 """
 
 import logging
+import ssl
 from datetime import datetime, timezone
 from typing import Optional, List, Dict, Any
 
+import certifi
 from pymongo import MongoClient, errors as pymongo_errors
 from pymongo.collection import Collection
 
@@ -20,10 +22,21 @@ class MongoManager:
         self.client: Optional[MongoClient] = None
         self.db = None
 
+    @staticmethod
+    def _build_ssl_context():
+        """Build a TLS context with certifi CA bundle."""
+        ctx = ssl.create_default_context(cafile=certifi.where())
+        return ctx
+
     def connect(self, uri: str, db_name: str = "exam_evaluations") -> bool:
         """Connect to MongoDB. Returns True if successful."""
         try:
-            self.client = MongoClient(uri, serverSelectionTimeoutMS=5000)
+            self.client = MongoClient(
+                uri,
+                serverSelectionTimeoutMS=5000,
+                tls=True,
+                tlsCAFile=certifi.where(),
+            )
             # Force a connection attempt
             self.client.admin.command("ping")
             self.db = self.client[db_name]

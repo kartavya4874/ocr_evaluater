@@ -1,5 +1,5 @@
 """
-OCR module — uses Claude claude-opus-4-6 vision to extract structured data from exam documents.
+OCR module — uses GPT-4o vision to extract structured data from exam documents.
 Handles PDFs (via pdf2image) and direct image files.
 """
 
@@ -10,7 +10,7 @@ import asyncio
 from pathlib import Path
 from typing import List, Optional
 
-import anthropic
+from openai import OpenAI
 from PIL import Image
 
 logger = logging.getLogger(__name__)
@@ -65,15 +65,13 @@ def get_images_base64(file_path: str) -> List[str]:
 
 
 def _build_vision_content(images_b64: List[str], prompt: str) -> list:
-    """Build the content array for Claude vision API call."""
+    """Build the content array for OpenAI vision API call."""
     content = []
     for b64 in images_b64:
         content.append({
-            "type": "image",
-            "source": {
-                "type": "base64",
-                "media_type": "image/jpeg",
-                "data": b64,
+            "type": "image_url",
+            "image_url": {
+                "url": f"data:image/jpeg;base64,{b64}",
             },
         })
     content.append({
@@ -84,7 +82,7 @@ def _build_vision_content(images_b64: List[str], prompt: str) -> list:
 
 
 def _parse_json_response(text: str) -> dict:
-    """Parse Claude's response, stripping any markdown fences."""
+    """Parse the model's response, stripping any markdown fences."""
     text = text.strip()
     # Remove markdown code fences if present
     if text.startswith("```"):
@@ -139,16 +137,16 @@ Rules:
 - For MCQs, include all options
 - Note any special instructions (attempt any N, compulsory, etc.)"""
 
-    client = anthropic.Anthropic(api_key=api_key)
+    client = OpenAI(api_key=api_key)
     content = _build_vision_content(images, prompt)
 
-    response = client.messages.create(
-        model="claude-opus-4-20250514",
+    response = client.chat.completions.create(
+        model="gpt-4o",
         max_tokens=8192,
         messages=[{"role": "user", "content": content}],
     )
 
-    text = response.content[0].text
+    text = response.choices[0].message.content
     return _parse_json_response(text)
 
 
@@ -185,16 +183,16 @@ Rules:
 - Preserve mathematical notation
 - For MCQs, just the correct option letter and text"""
 
-    client = anthropic.Anthropic(api_key=api_key)
+    client = OpenAI(api_key=api_key)
     content = _build_vision_content(images, prompt)
 
-    response = client.messages.create(
-        model="claude-opus-4-20250514",
+    response = client.chat.completions.create(
+        model="gpt-4o",
         max_tokens=8192,
         messages=[{"role": "user", "content": content}],
     )
 
-    text = response.content[0].text
+    text = response.choices[0].message.content
     return _parse_json_response(text)
 
 
@@ -236,14 +234,14 @@ Rules:
 - Describe any diagrams in detail
 - If roll number is visible on the sheet, use that; otherwise use the hint"""
 
-    client = anthropic.Anthropic(api_key=api_key)
+    client = OpenAI(api_key=api_key)
     content = _build_vision_content(images, prompt)
 
-    response = client.messages.create(
-        model="claude-opus-4-20250514",
+    response = client.chat.completions.create(
+        model="gpt-4o",
         max_tokens=8192,
         messages=[{"role": "user", "content": content}],
     )
 
-    text = response.content[0].text
+    text = response.choices[0].message.content
     return _parse_json_response(text)
