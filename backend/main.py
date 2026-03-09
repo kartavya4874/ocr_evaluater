@@ -219,19 +219,27 @@ async def _run_pipeline():
         max_concurrent = cfg.get("max_concurrent_api_calls", 5)
         distributed = cfg.get("distributed_mode", False)
 
+        logger.info("=" * 60)
+        logger.info("🚀 EVALUATION PIPELINE STARTED")
+        logger.info("=" * 60)
+
         # Ensure MongoDB is connected
         if not mongo_manager.is_connected():
+            logger.info("⏳ Connecting to MongoDB...")
             connected = mongo_manager.connect(cfg.get("mongodb_uri", ""))
             if not connected:
                 await _emit_progress({"stage": "FAILED", "message": "MongoDB connection failed. Check your connection string and network."})
                 return
+        logger.info("✅ MongoDB connected")
 
         # Step 1: Scan
         await _emit_progress({"stage": "SCANNING", "message": "Scanning exam folder..."})
+        logger.info(f"⏳ Scanning: {cfg.get('root_exam_folder', '')}")
         scan_result = scan_exam_folder(cfg.get("root_exam_folder", ""), cfg.get("selected_courses", "ALL"))
 
         if not scan_result.get("courses"):
             await _emit_progress({"stage": "FAILED", "message": "No courses found."})
+            logger.info("❌ No courses found in scan")
             return
 
         # Build job list
@@ -241,9 +249,12 @@ async def _run_pipeline():
         for job in jobs:
             mongo_manager.upsert_job(job)
 
+        total_courses = len(scan_result['courses'])
+        logger.info(f"✅ Scan DONE — {total_courses} courses, {len(jobs)} student sheets")
+
         await _emit_progress({
             "stage": "SCAN_DONE",
-            "message": f"Found {len(scan_result['courses'])} courses, {len(jobs)} student sheets.",
+            "message": f"Found {total_courses} courses, {len(jobs)} student sheets.",
         })
 
         # Process each course
@@ -300,6 +311,11 @@ async def _process_course(
 
     course_code = course_info["course_code"]
     inventory = course_info["file_inventory"]
+    total_sheets = len(inventory.get("student_sheets", []))
+
+    logger.info(f"{'='*60}")
+    logger.info(f"COURSE: {course_code} | {total_sheets} student sheets")
+    logger.info(f"{'='*60}")
 
     # Step 2: OCR question paper
     await _emit_progress({
@@ -307,7 +323,10 @@ async def _process_course(
         "course_code": course_code,
         "message": f"OCR: Question paper for {course_code}",
     })
+    logger.info(f"[{course_code}] ⏳ OCR question paper: {inventory['question_paper']}")
     qp_ocr = await ocr_question_paper(inventory["question_paper"], api_key)
+    qp_questions = len(qp_ocr.get("questions", []))
+    logger.info(f"[{course_code}] ✅ OCR question paper DONE — {qp_questions} questions found, total marks: {qp_ocr.get('total_marks', '?')}")
 
     # OCR answer key
     await _emit_progress({
@@ -315,11 +334,17 @@ async def _process_course(
         "course_code": course_code,
         "message": f"OCR: Answer key for {course_code}",
     })
+    logger.info(f"[{course_code}] ⏳ OCR answer key: {inventory['answer_key']}")
     ak_ocr = await ocr_answer_key(inventory["answer_key"], api_key)
+    ak_answers = len(ak_ocr.get("answers", []))
+    logger.info(f"[{course_code}] ✅ OCR answer key DONE — {ak_answers} answers found")
 
     # Build question map and answer key map
     question_map = build_question_map(qp_ocr)
     answer_key_map = build_answer_key_map(ak_ocr)
+    logger.info(f"[{course_code}] 📋 Question map: {len(question_map)} items | Answer key map: {len(answer_key_map)} items")
+    logger.info(f"[{course_code}] 📋 Question map keys: {sorted(question_map.keys())}")
+    logger.info(f"[{course_code}] 📋 Answer key keys: {sorted(answer_key_map.keys())}")
 
     # Save course data
     mongo_manager.upsert_course({
@@ -330,7 +355,7 @@ async def _process_course(
 
     # Step 3: OCR all student sheets (for calibration)
     student_ocr_results = []
-    for sheet in inventory["student_sheets"]:
+    for idx, sheet in enumerate(inventory["student_sheets"], 1):
         if pipeline_cancel:
             return
 
@@ -338,6 +363,7 @@ async def _process_course(
 
         # Skip if already evaluated and re_evaluate is false
         if not re_evaluate and mongo_manager.result_exists(course_code, roll):
+            logger.info(f"[{course_code}] ⏭️  Skipping {roll} — already evaluated ({idx}/{total_sheets})")
             await _emit_progress({
                 "stage": "SKIPPED",
                 "course_code": course_code,
@@ -350,12 +376,15 @@ async def _process_course(
             "stage": "OCR_SHEET",
             "course_code": course_code,
             "roll_number": roll,
-            "message": f"OCR: {roll} answer sheet",
+            "message": f"OCR: {roll} answer sheet ({idx}/{total_sheets})",
         })
+        logger.info(f"[{course_code}] ⏳ OCR student sheet {roll} ({idx}/{total_sheets})")
 
         try:
             sheet_ocr = await ocr_answer_sheet(sheet["file_path"], api_key, roll)
+            answers_found = len(sheet_ocr.get("answers", []))
             student_ocr_results.append({"roll_number": roll, "ocr": sheet_ocr, "file_path": sheet["file_path"]})
+            logger.info(f"[{course_code}] ✅ OCR {roll} DONE — {answers_found} answers extracted ({idx}/{total_sheets})")
 
             # Update job status
             jobs = [j for j in mongo_manager.get_jobs_by_course(course_code) if j.get("roll_number") == roll]
@@ -367,10 +396,10 @@ async def _process_course(
                 "stage": "OCR_DONE",
                 "course_code": course_code,
                 "roll_number": roll,
-                "message": f"OCR complete for {roll}",
+                "message": f"OCR complete for {roll} — {answers_found} answers ({idx}/{total_sheets})",
             })
         except Exception as e:
-            logger.error(f"OCR failed for {roll}: {e}")
+            logger.error(f"[{course_code}] ❌ OCR FAILED for {roll}: {e}")
             await _emit_progress({
                 "stage": "FAILED",
                 "course_code": course_code,
@@ -379,6 +408,7 @@ async def _process_course(
             })
 
     if not student_ocr_results:
+        logger.info(f"[{course_code}] ⚠️  No student sheets to evaluate")
         return
 
     # Step 3b: Calibration
@@ -387,12 +417,16 @@ async def _process_course(
         "course_code": course_code,
         "message": f"Building calibration profile for {course_code}",
     })
+    logger.info(f"[{course_code}] ⏳ Building calibration profile...")
 
     all_ocr_data = [s["ocr"] for s in student_ocr_results]
     pregraded = await find_pregraded_answers(all_ocr_data)
+    logger.info(f"[{course_code}] 📋 Found {len(pregraded)} pre-graded answers for calibration")
+
     calibration_profile = await build_calibration_profile(
         pregraded, question_map, answer_key_map, api_key,
     )
+    logger.info(f"[{course_code}] ✅ Calibration DONE — {len(calibration_profile.get('examples', []))} calibration examples")
 
     # Save calibration to course
     mongo_manager.upsert_course({
@@ -403,7 +437,8 @@ async def _process_course(
     })
 
     # Step 4 & 5: Map + Evaluate each student
-    for student_data in student_ocr_results:
+    evaluated_count = len(student_ocr_results)
+    for idx, student_data in enumerate(student_ocr_results, 1):
         if pipeline_cancel:
             return
 
@@ -414,13 +449,19 @@ async def _process_course(
             "stage": "EVALUATING",
             "course_code": course_code,
             "roll_number": roll,
-            "message": f"Evaluating {roll}...",
+            "message": f"Evaluating {roll}... ({idx}/{evaluated_count})",
         })
+        logger.info(f"[{course_code}] ⏳ Evaluating {roll} ({idx}/{evaluated_count})")
 
         try:
             # Map student answers
             mapped = map_student_answers(question_map, answer_key_map, sheet_ocr)
             mapped = handle_optional_sections(mapped)
+
+            attempted_count = sum(1 for m in mapped if m.get("attempted", False))
+            total_questions = len(mapped)
+            or_not_chosen = sum(1 for m in mapped if m.get("flag") == "OR_NOT_CHOSEN")
+            logger.info(f"[{course_code}] 📋 {roll}: {attempted_count}/{total_questions} questions attempted, {or_not_chosen} OR alternatives skipped")
 
             # Evaluate all questions
             evaluated = await evaluate_all_questions(
@@ -434,6 +475,8 @@ async def _process_course(
             result = await aggregate_student_result(
                 roll, course_code, evaluated, grading_scale, api_key,
             )
+
+            logger.info(f"[{course_code}] ✅ {roll}: {result.get('total_marks_awarded')}/{result.get('total_marks_possible')} — {result.get('percentage')}% — Grade: {result.get('grade')} ({idx}/{evaluated_count})")
 
             # Step 7: Save to MongoDB
             mongo_manager.upsert_result(result)
@@ -450,11 +493,11 @@ async def _process_course(
                 "roll_number": roll,
                 "marks": result.get("total_marks_awarded"),
                 "total": result.get("total_marks_possible"),
-                "message": f"{roll}: {result.get('total_marks_awarded')}/{result.get('total_marks_possible')} ({result.get('grade')})",
+                "message": f"{roll}: {result.get('total_marks_awarded')}/{result.get('total_marks_possible')} ({result.get('grade')}) — ({idx}/{evaluated_count})",
             })
 
         except Exception as e:
-            logger.error(f"Evaluation failed for {roll}: {e}")
+            logger.error(f"[{course_code}] ❌ Evaluation FAILED for {roll}: {e}")
 
             # Update job status
             jobs = [j for j in mongo_manager.get_jobs_by_course(course_code) if j.get("roll_number") == roll]
@@ -481,6 +524,10 @@ async def _process_course(
                 "roll_number": roll,
                 "message": f"Evaluation failed for {roll}: {str(e)}",
             })
+
+    logger.info(f"[{course_code}] {'='*60}")
+    logger.info(f"[{course_code}] 🎉 Course {course_code} COMPLETE")
+    logger.info(f"[{course_code}] {'='*60}")
 
 
 # --- Results ---
