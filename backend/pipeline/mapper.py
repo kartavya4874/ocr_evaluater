@@ -30,7 +30,7 @@ def build_question_map(question_paper_ocr: dict) -> Dict[str, dict]:
                 "marks_allocated": q.get("marks_allocated", 0),
                 "options": q.get("options", []),
                 "special_instruction": q.get("special_instruction"),
-                "or_group": q.get("or_group"),
+                "or_group": _normalize_or_group(q.get("or_group")),
             }
 
         # Also include sub-questions
@@ -44,7 +44,7 @@ def build_question_map(question_paper_ocr: dict) -> Dict[str, dict]:
                     "marks_allocated": sq.get("marks_allocated", 0),
                     "options": sq.get("options", []),
                     "special_instruction": sq.get("special_instruction"),
-                    "or_group": sq.get("or_group") or q.get("or_group"),
+                    "or_group": _normalize_or_group(sq.get("or_group")) or _normalize_or_group(q.get("or_group")),
                 }
 
     return qmap
@@ -58,6 +58,18 @@ def build_answer_key_map(answer_key_ocr: dict) -> Dict[str, dict]:
         if qnum:
             ak_map[qnum] = ans
     return ak_map
+
+
+def _normalize_or_group(value) -> Optional[str]:
+    """Normalize or_group values — treat empty/null/None as no group."""
+    if value is None:
+        return None
+    if isinstance(value, str):
+        v = value.strip().lower()
+        if v in ("", "null", "none", "n/a"):
+            return None
+        return value.strip()
+    return str(value)
 
 
 def _resolve_or_groups(
@@ -74,11 +86,13 @@ def _resolve_or_groups(
     # Group questions by or_group
     or_groups: Dict[str, List[str]] = {}
     for qnum, qinfo in question_map.items():
-        group = qinfo.get("or_group")
+        group = _normalize_or_group(qinfo.get("or_group"))
         if group:
             if group not in or_groups:
                 or_groups[group] = []
             or_groups[group].append(qnum)
+
+    logger.debug(f"OR groups detected: {or_groups}")
 
     for group, qnums in or_groups.items():
         if len(qnums) < 2:
@@ -93,6 +107,8 @@ def _resolve_or_groups(
                 attempted.append(qnum)
             else:
                 unattempted.append(qnum)
+
+        logger.debug(f"OR group '{group}': attempted={attempted}, unattempted={unattempted}")
 
         if attempted:
             # Student attempted at least one — mark others as OR_NOT_CHOSEN
@@ -125,6 +141,15 @@ def map_student_answers(
         if qnum:
             student_answers[qnum] = ans
 
+    # Debug: log the question numbers for matching analysis
+    qmap_keys = set(question_map.keys())
+    sa_keys = set(student_answers.keys())
+    logger.info(f"Question map keys: {sorted(qmap_keys)}")
+    logger.info(f"Student answer keys: {sorted(sa_keys)}")
+    logger.info(f"Matched keys: {sorted(qmap_keys & sa_keys)}")
+    logger.info(f"In QP but not student: {sorted(qmap_keys - sa_keys)}")
+    logger.info(f"In student but not QP: {sorted(sa_keys - qmap_keys)}")
+
     # Resolve OR groups
     or_flags = _resolve_or_groups(question_map, student_answers)
 
@@ -139,7 +164,7 @@ def map_student_answers(
             "question_type": qinfo.get("question_type", "SHORT"),
             "marks_allocated": qinfo.get("marks_allocated", 0),
             "special_instruction": qinfo.get("special_instruction"),
-            "or_group": qinfo.get("or_group"),
+            "or_group": _normalize_or_group(qinfo.get("or_group")),
             "correct_answer": ak_info.get("correct_answer", ""),
             "acceptable_keywords": ak_info.get("acceptable_keywords", []),
             "marking_scheme": ak_info.get("marking_scheme", ""),
