@@ -1,9 +1,11 @@
 """
 Mapper module — builds the Master Question Map and detects unattempted questions.
 Cross-references student answers against the question paper.
+Handles OR/alternative questions (e.g., 11.1 OR 11.2).
 """
 
 import logging
+import re
 from typing import List, Dict, Optional, Any
 
 logger = logging.getLogger(__name__)
@@ -13,6 +15,7 @@ def build_question_map(question_paper_ocr: dict) -> Dict[str, dict]:
     """
     Build a Master Question Map from the question paper OCR output.
     Returns a dict keyed by question_number with all question metadata.
+    Preserves or_group info for OR/alternative questions.
     """
     qmap = {}
     questions = question_paper_ocr.get("questions", [])
@@ -27,6 +30,7 @@ def build_question_map(question_paper_ocr: dict) -> Dict[str, dict]:
                 "marks_allocated": q.get("marks_allocated", 0),
                 "options": q.get("options", []),
                 "special_instruction": q.get("special_instruction"),
+                "or_group": q.get("or_group"),
             }
 
         # Also include sub-questions
@@ -40,6 +44,7 @@ def build_question_map(question_paper_ocr: dict) -> Dict[str, dict]:
                     "marks_allocated": sq.get("marks_allocated", 0),
                     "options": sq.get("options", []),
                     "special_instruction": sq.get("special_instruction"),
+                    "or_group": sq.get("or_group") or q.get("or_group"),
                 }
 
     return qmap
@@ -55,6 +60,54 @@ def build_answer_key_map(answer_key_ocr: dict) -> Dict[str, dict]:
     return ak_map
 
 
+def _resolve_or_groups(
+    question_map: Dict[str, dict],
+    student_answers: Dict[str, dict],
+) -> Dict[str, str]:
+    """
+    For OR/alternative question groups, determine which alternative was attempted.
+    Returns a dict mapping question_number -> flag for un-chosen alternatives.
+    Questions that were NOT chosen get 'OR_NOT_CHOSEN'.
+    """
+    or_flags: Dict[str, str] = {}
+
+    # Group questions by or_group
+    or_groups: Dict[str, List[str]] = {}
+    for qnum, qinfo in question_map.items():
+        group = qinfo.get("or_group")
+        if group:
+            if group not in or_groups:
+                or_groups[group] = []
+            or_groups[group].append(qnum)
+
+    for group, qnums in or_groups.items():
+        if len(qnums) < 2:
+            continue  # Not really an OR group
+
+        # Check which alternatives were attempted
+        attempted = []
+        unattempted = []
+        for qnum in qnums:
+            sa = student_answers.get(qnum)
+            if sa and not sa.get("is_blank", False) and not sa.get("is_crossed_out", False):
+                attempted.append(qnum)
+            else:
+                unattempted.append(qnum)
+
+        if attempted:
+            # Student attempted at least one — mark others as OR_NOT_CHOSEN
+            for qnum in qnums:
+                if qnum not in attempted:
+                    or_flags[qnum] = "OR_NOT_CHOSEN"
+        else:
+            # None attempted — pick the first as the "active" one, rest as OR_NOT_CHOSEN
+            # This way total_possible still counts the group once
+            for qnum in qnums[1:]:
+                or_flags[qnum] = "OR_NOT_CHOSEN"
+
+    return or_flags
+
+
 def map_student_answers(
     question_map: Dict[str, dict],
     answer_key_map: Dict[str, dict],
@@ -63,6 +116,7 @@ def map_student_answers(
     """
     Map a student's answers against the question map.
     Returns a list of mapped questions with attempt status.
+    Handles OR/alternative questions by marking un-chosen alternatives.
     """
     # Build student answer lookup
     student_answers = {}
@@ -70,6 +124,9 @@ def map_student_answers(
         qnum = ans.get("question_number", "")
         if qnum:
             student_answers[qnum] = ans
+
+    # Resolve OR groups
+    or_flags = _resolve_or_groups(question_map, student_answers)
 
     mapped = []
     for qnum, qinfo in question_map.items():
@@ -82,6 +139,7 @@ def map_student_answers(
             "question_type": qinfo.get("question_type", "SHORT"),
             "marks_allocated": qinfo.get("marks_allocated", 0),
             "special_instruction": qinfo.get("special_instruction"),
+            "or_group": qinfo.get("or_group"),
             "correct_answer": ak_info.get("correct_answer", ""),
             "acceptable_keywords": ak_info.get("acceptable_keywords", []),
             "marking_scheme": ak_info.get("marking_scheme", ""),
@@ -92,8 +150,12 @@ def map_student_answers(
             "flag": None,
         }
 
-        if student_ans is None:
-            # Not found in student sheet
+        # Check if this is an OR alternative that was NOT chosen
+        if qnum in or_flags:
+            entry["attempted"] = False
+            entry["flag"] = "OR_NOT_CHOSEN"
+            entry["student_answer"] = {}
+        elif student_ans is None:
             entry["attempted"] = False
             entry["flag"] = "UNATTEMPTED"
             entry["student_answer"] = {}
@@ -155,8 +217,6 @@ def apply_optional_counting(
     """
     After evaluation, for optional groups, keep the best N and mark the rest as OPTIONAL_NOT_COUNTED.
     """
-    import re
-
     # Group by optional_group
     optional_groups: Dict[str, List[dict]] = {}
     for eq in evaluated_questions:

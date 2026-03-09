@@ -21,8 +21,8 @@ def compute_total_marks(evaluated_questions: List[dict]) -> tuple:
     total_possible = 0.0
 
     for eq in evaluated_questions:
-        # Skip questions flagged as OPTIONAL_NOT_COUNTED
-        if eq.get("flag") == "OPTIONAL_NOT_COUNTED":
+        # Skip questions flagged as OPTIONAL_NOT_COUNTED or OR_NOT_CHOSEN
+        if eq.get("flag") in ("OPTIONAL_NOT_COUNTED", "OR_NOT_CHOSEN"):
             continue
 
         total_awarded += eq.get("marks_awarded", 0)
@@ -57,7 +57,7 @@ def get_flagged_questions(evaluated_questions: List[dict]) -> List[dict]:
     """Extract questions with flags."""
     flagged = []
     for eq in evaluated_questions:
-        if eq.get("flag") and eq["flag"] not in ("UNATTEMPTED", "OPTIONAL_NOT_COUNTED"):
+        if eq.get("flag") and eq["flag"] not in ("UNATTEMPTED", "OPTIONAL_NOT_COUNTED", "OR_NOT_CHOSEN"):
             flagged.append({
                 "question_number": eq["question_number"],
                 "flag": eq["flag"],

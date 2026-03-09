@@ -4,8 +4,13 @@ Handles PDFs (via pdf2image) and direct image files.
 """
 
 import base64
+import glob
+import io
 import json
 import logging
+import os
+import shutil
+import sys
 import asyncio
 from pathlib import Path
 from typing import List, Optional
@@ -18,14 +23,61 @@ logger = logging.getLogger(__name__)
 SUPPORTED_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".tiff"}
 
 
+def _find_poppler_path() -> Optional[str]:
+    """Auto-detect poppler bin directory on Windows.
+    Returns the path to the poppler bin dir, or None if not needed / not found."""
+    # Not needed on non-Windows (poppler is typically in PATH via package manager)
+    if sys.platform != "win32":
+        return None
+
+    # If pdftoppm is already in PATH, no need to specify poppler_path
+    if shutil.which("pdftoppm"):
+        return None
+
+    # Common installation locations on Windows
+    search_patterns = [
+        # winget installs
+        os.path.expandvars(r"%LOCALAPPDATA%\Microsoft\WinGet\Packages\*poppler*\**\bin"),
+        os.path.expandvars(r"%LOCALAPPDATA%\Microsoft\WinGet\Links"),
+        # Manual / chocolatey / scoop installs
+        r"C:\Program Files\poppler*\Library\bin",
+        r"C:\Program Files\poppler*\bin",
+        r"C:\Program Files (x86)\poppler*\bin",
+        os.path.expandvars(r"%LOCALAPPDATA%\Programs\poppler*\Library\bin"),
+        os.path.expandvars(r"%USERPROFILE%\scoop\apps\poppler\current\bin"),
+        r"C:\tools\poppler*\bin",
+        r"C:\poppler*\bin",
+        r"C:\poppler*\Library\bin",
+    ]
+
+    for pattern in search_patterns:
+        matches = glob.glob(pattern, recursive=True)
+        for match in matches:
+            if os.path.isdir(match) and (
+                os.path.isfile(os.path.join(match, "pdftoppm.exe"))
+                or os.path.isfile(os.path.join(match, "pdfinfo.exe"))
+            ):
+                logger.info(f"Found poppler at: {match}")
+                return match
+
+    logger.warning("Poppler not found in common locations. PDF conversion may fail.")
+    return None
+
+
+# Cache the poppler path on module load
+_POPPLER_PATH = _find_poppler_path()
+
+
 def _convert_pdf_to_images(pdf_path: str) -> List[str]:
     """Convert a PDF file to a list of base64-encoded JPEG images."""
     try:
         from pdf2image import convert_from_path
-        images = convert_from_path(pdf_path, dpi=200, fmt="jpeg")
+        kwargs = {"dpi": 200, "fmt": "jpeg"}
+        if _POPPLER_PATH:
+            kwargs["poppler_path"] = _POPPLER_PATH
+        images = convert_from_path(pdf_path, **kwargs)
         base64_images = []
         for img in images:
-            import io
             buf = io.BytesIO()
             img.save(buf, format="JPEG", quality=90)
             b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
@@ -105,14 +157,15 @@ Return ONLY valid JSON. No markdown, no backticks, no explanation.
 
 Return this exact structure:
 {
-  "total_marks": <number>,
+  "total_marks": <number — the actual total marks a student can score, NOT the sum of all OR alternatives>,
   "questions": [
     {
-      "question_number": "<string like 1, 1a, 2b etc>",
+      "question_number": "<string like 1, 1a, 2b, 11.1, 11.2 etc>",
       "question_text": "<full question text>",
       "question_type": "<one of: MCQ, FIB, SHORT, LONG, DIAGRAM, CODE, MATH, CHEMISTRY, NUMERICAL>",
       "marks_allocated": <number>,
       "options": ["A. ...", "B. ..."],
+      "or_group": "<group ID if this is an OR/alternative question, e.g. '11' for 11.1 OR 11.2; null if not an OR question>",
       "sub_questions": [
         {
           "question_number": "<e.g. 1a>",
@@ -120,6 +173,7 @@ Return this exact structure:
           "question_type": "...",
           "marks_allocated": <number>,
           "options": [],
+          "or_group": "<group ID or null>",
           "special_instruction": null
         }
       ],
@@ -135,7 +189,12 @@ Rules:
 - If marks are not specified for a question, estimate from total marks
 - Preserve mathematical notation as LaTeX where possible
 - For MCQs, include all options
-- Note any special instructions (attempt any N, compulsory, etc.)"""
+- Note any special instructions (attempt any N, compulsory, etc.)
+- CRITICAL: Detect OR/alternative questions (e.g. "11.1 OR 11.2", "Q5a OR Q5b", "Answer either A or B")
+  - When two questions are OR alternatives, give them the SAME or_group value (e.g. "11" for 11.1/11.2)
+  - Both alternatives should have the same marks_allocated (since only one is attempted)
+  - The total_marks should count OR groups only ONCE (not both alternatives)
+- Set or_group to null for questions that are NOT OR/alternatives"""
 
     client = OpenAI(api_key=api_key)
     content = _build_vision_content(images, prompt)

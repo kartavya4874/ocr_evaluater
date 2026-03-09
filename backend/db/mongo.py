@@ -15,6 +15,27 @@ from pymongo.collection import Collection
 logger = logging.getLogger(__name__)
 
 
+def _configure_dns():
+    """Configure dnspython to use Google/Cloudflare DNS servers.
+    Fixes SRV resolution failures when the local DNS server can't resolve
+    MongoDB Atlas hostnames (common on restricted networks)."""
+    try:
+        import dns.resolver
+        resolver = dns.resolver.Resolver()
+        resolver.nameservers = ["8.8.8.8", "8.8.4.4", "1.1.1.1"]
+        resolver.lifetime = 10
+        dns.resolver.default_resolver = resolver
+        logger.info("Configured DNS resolver to use Google/Cloudflare DNS")
+    except ImportError:
+        logger.warning("dnspython not installed, SRV resolution may fail")
+    except Exception as e:
+        logger.warning(f"Failed to configure DNS resolver: {e}")
+
+
+# Configure DNS on module load so SRV lookups work
+_configure_dns()
+
+
 class MongoManager:
     """Manages MongoDB connections and operations for exam evaluation data."""
 
@@ -22,20 +43,15 @@ class MongoManager:
         self.client: Optional[MongoClient] = None
         self.db = None
 
-    @staticmethod
-    def _build_ssl_context():
-        """Build a TLS context with certifi CA bundle."""
-        ctx = ssl.create_default_context(cafile=certifi.where())
-        return ctx
-
     def connect(self, uri: str, db_name: str = "exam_evaluations") -> bool:
         """Connect to MongoDB. Returns True if successful."""
         try:
             self.client = MongoClient(
                 uri,
-                serverSelectionTimeoutMS=5000,
+                serverSelectionTimeoutMS=10000,
                 tls=True,
                 tlsCAFile=certifi.where(),
+                tlsAllowInvalidCertificates=True,
             )
             # Force a connection attempt
             self.client.admin.command("ping")

@@ -1,5 +1,6 @@
 """
 Evaluator module — per-question evaluation using GPT-4o.
+Two-phase approach: self-evaluate first, then compare with teacher marks.
 Includes post-processing for MCQ/FIB force full-or-zero logic.
 """
 
@@ -24,7 +25,7 @@ async def evaluate_question(
 ) -> dict:
     """
     Evaluate a single question using GPT-4o.
-    Returns the evaluation result dict.
+    Two-phase: (1) self-evaluate without seeing teacher marks, (2) compare & flag.
     """
     if not mapped_question.get("attempted", True):
         return {
@@ -47,9 +48,12 @@ async def evaluate_question(
 
     calibration_text = format_calibration_for_prompt(calibration_profile, qnum)
 
-    prompt = f"""You are a university examiner. Evaluate strictly and fairly.
+    # --- PHASE 1: Self-evaluate WITHOUT seeing teacher marks ---
+    # Intentionally exclude examiner_marks_written from the prompt
+    prompt = f"""You are a university examiner. Evaluate this answer thoroughly and fairly.
+Give the student benefit of the doubt where reasonable.
 
-CALIBRATION — match this faculty's marking style:
+CALIBRATION — match this faculty's general marking style:
 {calibration_text}
 
 Question {qnum} | Type: {qtype} | Max: {marks}
@@ -67,24 +71,27 @@ Math: {student_ans.get('math_expression', '')}
 Chemistry: {student_ans.get('chemistry_notation', '')}
 Legibility: {student_ans.get('legibility', 'HIGH')}
 
-RULES — STRICTLY ENFORCED:
+MARKING RULES — STRICTLY ENFORCED:
 - MCQ → full marks or zero. Never partial.
 - FIB → full marks or zero. Never partial.
-- SHORT/LONG → partial marks on keyword coverage and accuracy
-- DIAGRAM → partial: labeling, accuracy, completeness
-- CODE → partial: correct logic earns method marks even with syntax errors
-- MATH → step marks: right method + wrong arithmetic = method marks only
-- CHEMISTRY → partial: formula correctness, balancing, mechanism steps
-- NUMERICAL → method marks even if final answer is wrong
-- LOW LEGIBILITY → 0 marks, note in feedback
-- Never exceed maximum marks
+- SHORT/LONG → award partial marks generously based on keyword coverage, accuracy, and relevance. If the answer is broadly correct but poorly phrased, still award significant marks.
+- DIAGRAM → partial: labeling, accuracy, completeness. A roughly correct diagram deserves credit.
+- CODE → partial: correct logic earns method marks even with syntax errors. Pseudocode or near-correct code should get partial credit.
+- MATH → step marks: right method + wrong arithmetic = method marks. Each correct step deserves credit even if final answer wrong.
+- CHEMISTRY → partial: formula correctness, balancing, mechanism steps.
+- NUMERICAL → method marks even if final answer is wrong. Show work = partial credit.
+- LOW LEGIBILITY → reduce marks by 20% (NOT zero), unless completely unreadable.
+- Never exceed maximum marks.
+- BENEFIT OF DOUBT: If the student's answer demonstrates understanding of the core concept, award marks even if exact wording differs from answer key.
+- Consider ALL forms of answer (text, diagram, code, math) together — a weak text answer supported by a correct diagram deserves full credit.
+- Do NOT award 0 marks unless the answer is completely wrong, irrelevant, or blank.
 
 Return ONLY valid JSON:
 {{
   "question_number": "{qnum}",
   "marks_awarded": <number>,
   "marks_total": {marks},
-  "reasoning": "<detailed evaluation reasoning>",
+  "reasoning": "<detailed evaluation reasoning, explain step by step why marks were awarded or deducted>",
   "student_feedback": "<constructive feedback for the student>",
   "keywords_matched": ["<matched keywords>"],
   "keywords_missing": ["<missing keywords>"],
@@ -94,7 +101,6 @@ Return ONLY valid JSON:
 
 Possible flags (use only when applicable):
 - "LEGIBILITY_WARNING" — low legibility affected grading
-- "EXAMINER_DISCREPANCY" — your marks differ significantly from examiner marks
 - "BOUNDARY_CASE" — student is very close to gaining/losing marks"""
 
     async def _call_api():
@@ -123,13 +129,19 @@ Possible flags (use only when applicable):
 
         result = json.loads(text)
 
-        # Post-process: check examiner discrepancy
+        # --- PHASE 2: Compare with teacher marks (if available) ---
         examiner_marks = student_ans.get("examiner_marks_written")
         if examiner_marks is not None:
             ai_marks = result.get("marks_awarded", 0)
+            result["examiner_marks"] = examiner_marks
+            result["ai_independent_marks"] = ai_marks
+
             if abs(ai_marks - examiner_marks) > 1:
                 result["flag"] = "EXAMINER_DISCREPANCY"
-                result["flag_detail"] = f"AI awarded {ai_marks}, examiner wrote {examiner_marks}"
+                result["flag_detail"] = (
+                    f"AI independently awarded {ai_marks}, teacher gave {examiner_marks}. "
+                    f"Difference: {abs(ai_marks - examiner_marks)} marks."
+                )
 
         # Post-process: MCQ/FIB force full or zero
         result = _post_process_mcq_fib(result, qtype, marks)
