@@ -316,10 +316,12 @@ async def _process_course(
         "message": f"OCR: Answer key for {course_code}",
     })
     ak_ocr = await ocr_answer_key(inventory["answer_key"], api_key)
+    logger.info(f"[DIAG] QP OCR done, AK OCR done for {course_code}")
 
     # Build question map and answer key map
     question_map = build_question_map(qp_ocr)
     answer_key_map = build_answer_key_map(ak_ocr)
+    logger.info(f"[DIAG] question_map has {len(question_map)} questions, answer_key_map has {len(answer_key_map)} entries")
 
     # Save course data
     mongo_manager.upsert_course({
@@ -327,8 +329,15 @@ async def _process_course(
         "question_map": question_map,
         "total_marks": qp_ocr.get("total_marks", 100),
     })
+    logger.info(f"[DIAG] Course data saved to MongoDB")
+
+    print(f"{"*"*15}\n\nQuestion Map: {question_map}\n\n{"*"*15}")
+    print(f"{"*"*15}\n\nGOing FOr ocr students\n\nInvenetory -->> {inventory}\n{"*"*15}")
 
     # Step 3: OCR all student sheets (for calibration)
+    logger.info(f"[DIAG] student_sheets count: {len(inventory['student_sheets'])}")
+    logger.info(f"[DIAG] student_sheets: {[s['roll_number'] for s in inventory['student_sheets']]}")
+    logger.info(f"[DIAG] re_evaluate={re_evaluate}")
     student_ocr_results = []
     for sheet in inventory["student_sheets"]:
         if pipeline_cancel:
@@ -338,6 +347,7 @@ async def _process_course(
 
         # Skip if already evaluated and re_evaluate is false
         if not re_evaluate and mongo_manager.result_exists(course_code, roll):
+            logger.info(f"[DIAG] SKIPPING {roll} — result already exists in MongoDB")
             await _emit_progress({
                 "stage": "SKIPPED",
                 "course_code": course_code,

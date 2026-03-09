@@ -97,6 +97,7 @@ def _parse_json_response(text: str) -> dict:
 
 async def ocr_question_paper(file_path: str, api_key: str) -> dict:
     """OCR a question paper and return structured JSON."""
+    print(f"{"*"*15}\n\nCame to question_ocr\n\n{"*"*15}")
     images = get_images_base64(file_path)
 
     prompt = """You are an expert OCR system. Extract all questions from this exam question paper.
@@ -152,6 +153,7 @@ Rules:
 
 async def ocr_answer_key(file_path: str, api_key: str) -> dict:
     """OCR an answer key and return structured JSON."""
+    print(f"{"*"*15}\n\nCame to Key_answer\n\n{"*"*15}")
     images = get_images_base64(file_path)
 
     prompt = """You are an expert OCR system. Extract all answers from this exam answer key.
@@ -198,6 +200,7 @@ Rules:
 
 async def ocr_answer_sheet(file_path: str, api_key: str, roll_number_hint: str = "") -> dict:
     """OCR a student answer sheet and return structured JSON."""
+    print(f"{"*"*15}\n\nCame to ocr_Answer\n\n{"*"*15}")
     images = get_images_base64(file_path)
 
     prompt = f"""You are an expert OCR system. Extract all student answers from this exam answer sheet.
