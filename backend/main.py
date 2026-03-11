@@ -90,7 +90,7 @@ async def config_load():
 
 @app.post("/config/validate")
 async def config_validate():
-    """Test MongoDB, Redis, and OpenAI API connections."""
+    """Test MongoDB, Redis, OpenAI API, and Google Vision API connections."""
     cfg = load_config()
     results = {}
 
@@ -121,6 +121,34 @@ async def config_validate():
     except Exception as e:
         results["openai"] = False
         results["openai_error"] = str(e)
+
+    # Test Google Cloud Vision API
+    try:
+        creds_path = cfg.get("google_cloud_credentials_path", "")
+        if creds_path and os.path.isfile(creds_path):
+            from google.cloud import vision
+            from google.oauth2 import service_account
+            credentials = service_account.Credentials.from_service_account_file(creds_path)
+            client = vision.ImageAnnotatorClient(credentials=credentials)
+            # Simple test: create a blank image and try to detect text
+            import io
+            from PIL import Image as PILImage
+            test_img = PILImage.new('RGB', (10, 10), color='white')
+            buf = io.BytesIO()
+            test_img.save(buf, format='PNG')
+            image = vision.Image(content=buf.getvalue())
+            response = client.text_detection(image=image)
+            if response.error.message:
+                results["google_vision"] = False
+                results["google_vision_error"] = response.error.message
+            else:
+                results["google_vision"] = True
+        else:
+            results["google_vision"] = False
+            results["google_vision_error"] = "Credentials file not configured or not found"
+    except Exception as e:
+        results["google_vision"] = False
+        results["google_vision_error"] = str(e)
 
     # Test Redis (only if distributed mode enabled)
     if cfg.get("distributed_mode"):
@@ -214,10 +242,16 @@ async def _run_pipeline():
     try:
         cfg = load_config()
         api_key = cfg.get("openai_api_key", "")
+        credentials_path = cfg.get("google_cloud_credentials_path", "")
         grading_scale = cfg.get("grading_scale", {})
         re_evaluate = cfg.get("re_evaluate", False)
         max_concurrent = cfg.get("max_concurrent_api_calls", 5)
         distributed = cfg.get("distributed_mode", False)
+
+        # Validate Google Cloud credentials
+        if not credentials_path or not os.path.isfile(credentials_path):
+            await _emit_progress({"stage": "FAILED", "message": "Google Cloud credentials file not configured or not found. Set the path in Setup."})
+            return
 
         # Ensure MongoDB is connected
         if not mongo_manager.is_connected():
@@ -269,7 +303,7 @@ async def _run_pipeline():
             })
 
             try:
-                await _process_course(course_info, cfg, api_key, grading_scale, re_evaluate, max_concurrent)
+                await _process_course(course_info, cfg, api_key, credentials_path, grading_scale, re_evaluate, max_concurrent)
             except Exception as e:
                 logger.error(f"Course {course_code} failed: {e}")
                 await _emit_progress({
@@ -291,11 +325,12 @@ async def _process_course(
     course_info: dict,
     cfg: dict,
     api_key: str,
+    credentials_path: str,
     grading_scale: dict,
     re_evaluate: bool,
     max_concurrent: int,
 ):
-    """Process a single course: OCR → Map → Calibrate → Evaluate → Aggregate."""
+    """Process a single course: OCR (Google Vision) → Map → Calibrate → Evaluate (OpenAI) → Aggregate."""
     global pipeline_cancel
 
     course_code = course_info["course_code"]
@@ -307,7 +342,7 @@ async def _process_course(
         "course_code": course_code,
         "message": f"OCR: Question paper for {course_code}",
     })
-    qp_ocr = await ocr_question_paper(inventory["question_paper"], api_key)
+    qp_ocr = await ocr_question_paper(inventory["question_paper"], api_key, credentials_path)
 
     # OCR answer key
     await _emit_progress({
@@ -315,7 +350,7 @@ async def _process_course(
         "course_code": course_code,
         "message": f"OCR: Answer key for {course_code}",
     })
-    ak_ocr = await ocr_answer_key(inventory["answer_key"], api_key)
+    ak_ocr = await ocr_answer_key(inventory["answer_key"], api_key, credentials_path)
     logger.info(f"[DIAG] QP OCR done, AK OCR done for {course_code}")
 
     # Build question map and answer key map
@@ -364,7 +399,7 @@ async def _process_course(
         })
 
         try:
-            sheet_ocr = await ocr_answer_sheet(sheet["file_path"], api_key, roll)
+            sheet_ocr = await ocr_answer_sheet(sheet["file_path"], api_key, roll, credentials_path)
             student_ocr_results.append({"roll_number": roll, "ocr": sheet_ocr, "file_path": sheet["file_path"]})
 
             # Update job status

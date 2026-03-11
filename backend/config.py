@@ -9,12 +9,21 @@ import sys
 from pathlib import Path
 from typing import Optional
 
+try:
+    from dotenv import load_dotenv
+    # Load .env file from two levels up (root directory)
+    load_dotenv(Path(__file__).parent.parent / ".env")
+except ImportError:
+    pass  # python-dotenv not installed yet, or we're running somewhere else
+
+
 DEFAULT_CONFIG = {
     "root_exam_folder": "",
     "export_output_folder": "",
-    "openai_api_key": "",
-    "mongodb_uri": "mongodb://localhost:27017",
-    "redis_url": "redis://localhost:6379",
+    "openai_api_key": os.environ.get("OPENAI_API_KEY", ""),
+    "google_cloud_credentials_path": os.environ.get("GOOGLE_CLOUD_CREDENTIALS_PATH", ""),
+    "mongodb_uri": os.environ.get("MONGODB_URI", "mongodb://localhost:27017"),
+    "redis_url": os.environ.get("REDIS_URL", "redis://localhost:6379"),
     "distributed_mode": False,
     "head_node_port": 8765,
     "re_evaluate": False,
@@ -56,6 +65,17 @@ def load_config() -> dict:
             # Ensure grading_scale has all keys
             if "grading_scale" in saved:
                 merged["grading_scale"] = {**DEFAULT_CONFIG["grading_scale"], **saved["grading_scale"]}
+            
+            # Override with ENV variables if available (takes precedence over config.json)
+            if os.environ.get("OPENAI_API_KEY"):
+                merged["openai_api_key"] = os.environ.get("OPENAI_API_KEY")
+            if os.environ.get("GOOGLE_CLOUD_CREDENTIALS_PATH"):
+                merged["google_cloud_credentials_path"] = os.environ.get("GOOGLE_CLOUD_CREDENTIALS_PATH")
+            if os.environ.get("MONGODB_URI"):
+                merged["mongodb_uri"] = os.environ.get("MONGODB_URI")
+            if os.environ.get("REDIS_URL"):
+                merged["redis_url"] = os.environ.get("REDIS_URL")
+                
             return merged
         except (json.JSONDecodeError, IOError):
             return dict(DEFAULT_CONFIG)
@@ -77,5 +97,9 @@ def validate_config(config: dict) -> dict:
     results = {}
     results["root_exam_folder"] = bool(config.get("root_exam_folder")) and os.path.isdir(config.get("root_exam_folder", ""))
     results["openai_api_key"] = bool(config.get("openai_api_key"))
+    results["google_cloud_credentials_path"] = (
+        bool(config.get("google_cloud_credentials_path"))
+        and os.path.isfile(config.get("google_cloud_credentials_path", ""))
+    )
     results["mongodb_uri"] = bool(config.get("mongodb_uri"))
     return results

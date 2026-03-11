@@ -12,8 +12,24 @@ env/
 node_modules/
 dist/
 
-# Config (contains secrets)
+# ============================================
+# SECRETS & CREDENTIALS — NEVER COMMIT THESE
+# ============================================
+# Environment files (contain real secrets)
+.env
+.env.local
+.env.*.local
+
+# Config file (may contain API keys)
 config.json
+
+# Google Cloud / any service-account key files
+*.json
+!package.json
+!package-lock.json
+!vite.config.js
+!electron-builder.config.js
+!tsconfig.json
 
 # IDE
 .vscode/
@@ -28,3 +44,6 @@ build/
 *.exe
 *.dmg
 *.AppImage
+
+# Gemini
+.gemini/

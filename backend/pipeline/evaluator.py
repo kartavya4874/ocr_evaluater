@@ -27,6 +27,27 @@ async def evaluate_question(
     Returns the evaluation result dict.
     """
     if not mapped_question.get("attempted", True):
+        flag = mapped_question.get("flag", "UNATTEMPTED")
+
+        # Internal choice skipped — student chose the other OR option
+        # This is NOT a penalty — marks_total should be 0 so it doesn't count
+        if flag == "INTERNAL_CHOICE_SKIPPED":
+            return {
+                "question_number": mapped_question["question_number"],
+                "marks_awarded": 0,
+                "marks_total": 0,  # Don't count in total possible marks
+                "reasoning": "Student chose the other option (internal choice).",
+                "student_feedback": "You attempted the other option for this question.",
+                "keywords_matched": [],
+                "keywords_missing": [],
+                "flag": "INTERNAL_CHOICE_SKIPPED",
+                "flag_detail": "Valid skip — student answered the alternate choice.",
+                "attempted": False,
+                "is_internal_choice": True,
+                "choice_group": mapped_question.get("choice_group"),
+            }
+
+        # Genuinely unattempted question
         return {
             "question_number": mapped_question["question_number"],
             "marks_awarded": 0,
@@ -35,7 +56,7 @@ async def evaluate_question(
             "student_feedback": "This question was not attempted.",
             "keywords_matched": [],
             "keywords_missing": mapped_question.get("acceptable_keywords", []),
-            "flag": mapped_question.get("flag", "UNATTEMPTED"),
+            "flag": flag,
             "flag_detail": "Question was blank, crossed out, or missing.",
             "attempted": False,
         }

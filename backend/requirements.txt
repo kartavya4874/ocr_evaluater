@@ -1,6 +1,8 @@
 fastapi>=0.115.0
 uvicorn[standard]>=0.30.0
 openai>=1.30.0
+google-cloud-vision>=3.7.0
+google-auth>=2.29.0
 pymongo>=4.10.0
 certifi
 redis>=5.0.1
@@ -10,3 +12,4 @@ Pillow>=10.4.0
 pydantic>=2.10.0
 python-multipart>=0.0.9
 sse-starlette>=1.8.2
+python-dotenv>=1.0.0

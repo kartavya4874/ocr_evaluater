@@ -1,4 +1,4 @@
-# Exam Evaluator
+                                                                                # Exam Evaluator
 
 Automated exam evaluation desktop application powered by OpenAI GPT-4o. Faculty double-clicks it and it works.
 

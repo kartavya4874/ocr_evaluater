@@ -8,7 +8,8 @@ export default function Setup() {
         root_exam_folder: '',
         export_output_folder: '',
         openai_api_key: '',
-        mongodb_uri: 'mongodb://localhost:27017',
+        google_cloud_credentials_path: 'c:\\AI Engineer\\Projects\\OCR_Eval\\ocr_evaluater\\nth-fort-457704-t0-b6f570c9552f.json',
+        mongodb_uri: '',
         redis_url: 'redis://localhost:6379',
         distributed_mode: false,
         head_node_port: 8765,
@@ -106,11 +107,11 @@ export default function Setup() {
                 </div>
             </div>
 
-            {/* API & Database */}
+            {/* API Keys & Credentials */}
             <div className="grid grid-2" style={{ marginBottom: 20 }}>
                 <div className="card">
                     <div className="card-header">
-                        <h3 className="card-title">🔑 OpenAI API</h3>
+                        <h3 className="card-title">🔑 OpenAI API (Evaluation)</h3>
                     </div>
                     <div className="input-group">
                         <label>API Key</label>
@@ -122,9 +123,31 @@ export default function Setup() {
                             value={config.openai_api_key}
                             onChange={(e) => updateConfig('openai_api_key', e.target.value)}
                         />
+                        <small style={{ color: 'var(--text-secondary)', marginTop: 4, display: 'block' }}>Used for structuring OCR text and evaluating answers</small>
                     </div>
                 </div>
 
+                <div className="card">
+                    <div className="card-header">
+                        <h3 className="card-title">👁️ Google Cloud Vision (OCR)</h3>
+                    </div>
+                    <div className="input-group">
+                        <label>Service Account JSON Path</label>
+                        <input
+                            id="input-gcloud-credentials"
+                            className="input"
+                            type="text"
+                            placeholder="C:\\path\\to\\service-account.json"
+                            value={config.google_cloud_credentials_path}
+                            onChange={(e) => updateConfig('google_cloud_credentials_path', e.target.value)}
+                        />
+                        <small style={{ color: 'var(--text-secondary)', marginTop: 4, display: 'block' }}>Path to Google Cloud service account JSON file for Vision API</small>
+                    </div>
+                </div>
+            </div>
+
+            {/* Database */}
+            <div className="grid grid-2" style={{ marginBottom: 20 }}>
                 <div className="card">
                     <div className="card-header">
                         <h3 className="card-title">🗄️ MongoDB</h3>
@@ -254,10 +277,17 @@ export default function Setup() {
                                 </span>
                             </div>
                             <div className="connection-test">
-                                <span className="service-name">OpenAI</span>
+                                <span className="service-name">OpenAI (Evaluation)</span>
                                 <span className="status-badge">
                                     <span className={`status-dot ${testResults.openai ? 'online' : 'offline'}`} />
                                     {testResults.openai ? 'Connected' : testResults.openai_error || 'Failed'}
+                                </span>
+                            </div>
+                            <div className="connection-test">
+                                <span className="service-name">Google Vision (OCR)</span>
+                                <span className="status-badge">
+                                    <span className={`status-dot ${testResults.google_vision ? 'online' : 'offline'}`} />
+                                    {testResults.google_vision ? 'Connected' : testResults.google_vision_error || 'Failed'}
                                 </span>
                             </div>
                             {testResults.redis !== null && (

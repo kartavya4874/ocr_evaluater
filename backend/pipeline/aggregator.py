@@ -16,6 +16,7 @@ def compute_total_marks(evaluated_questions: List[dict]) -> tuple:
     """
     Sum up marks from evaluated questions.
     Returns (total_awarded, total_possible).
+    Excludes OPTIONAL_NOT_COUNTED and INTERNAL_CHOICE_SKIPPED questions.
     """
     total_awarded = 0.0
     total_possible = 0.0
@@ -23,6 +24,10 @@ def compute_total_marks(evaluated_questions: List[dict]) -> tuple:
     for eq in evaluated_questions:
         # Skip questions flagged as OPTIONAL_NOT_COUNTED
         if eq.get("flag") == "OPTIONAL_NOT_COUNTED":
+            continue
+        # Skip internal choice questions the student didn't pick
+        # (marks_total is already 0, but skip explicitly for clarity)
+        if eq.get("flag") == "INTERNAL_CHOICE_SKIPPED":
             continue
 
         total_awarded += eq.get("marks_awarded", 0)
@@ -69,11 +74,13 @@ def get_flagged_questions(evaluated_questions: List[dict]) -> List[dict]:
 
 
 def get_unattempted_list(evaluated_questions: List[dict]) -> List[str]:
-    """Get list of unattempted question numbers."""
+    """Get list of genuinely unattempted question numbers.
+    Excludes INTERNAL_CHOICE_SKIPPED (those are valid skips, not penalties)."""
     return [
         eq["question_number"]
         for eq in evaluated_questions
-        if not eq.get("attempted", True) or eq.get("flag") == "UNATTEMPTED"
+        if (not eq.get("attempted", True) or eq.get("flag") == "UNATTEMPTED")
+        and eq.get("flag") != "INTERNAL_CHOICE_SKIPPED"
     ]
 
 
